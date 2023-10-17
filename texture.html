@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html><head>
+    <style>
+        #the-canvas { border: 1px solid darkblue; }
+    </style>
+</head>
+
+<body>
+    <canvas id="the-canvas" width="800" height="600"></canvas>
+    <script src="lib.js"></script>
+    <script src="matrix.js"></script>
+    <script src="vector.js"></script>
+    <script src="mesh.js"></script>
+    <script src="controls.js"></script>
+    
+    <script>
+        let canvas = document.getElementById( 'the-canvas' );
+        
+        /** @type {WebGLRenderingContext} */
+        let gl = canvas.getContext( 'webgl2' );
+        
+        let vertex_source = 
+        `   #version 300 es
+            precision mediump float;
+
+            uniform mat4 modelview; // this is the matrix
+
+            in vec3 coordinates;
+            in vec4 color;
+            in vec2 uv;
+
+            out vec4 v_color;
+            out vec2 v_uv;
+
+            void main( void ) { // vv do the vector multiplication
+                gl_Position = modelview * vec4( coordinates, 1.0 );
+                v_color = color;
+                v_uv = uv;
+            }
+        `;
+        
+        let fragment_source = 
+        `   #version 300 es
+            precision mediump float;
+
+            uniform sampler2D tex_0;
+
+            in vec4 v_color;
+            in vec2 v_uv;
+
+            out vec4 f_color;
+
+            void main( void ) {
+                f_color = v_color;
+                f_color = texture(tex_0, v_uv);
+            }
+        `;
+
+        let shader_program = create_compile_and_link_program(gl, vertex_source, fragment_source);
+        gl.useProgram(shader_program);
+        set_render_params(gl);
+
+        let proj = Mat4.default_frustum(canvas);
+        let camera = Mat4.identity().mul(Mat4.translation(0, 0, -1.2));
+
+        let mesh = Mesh.box(gl, shader_program, 1, 1, 1); // Mesh setup
+
+        let keys = Keys.start_listening(document, canvas);
+
+        let image = new Image();
+
+        function on_load() {
+            let tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+            gl.generateMipmap(gl.TEXTURE_2D);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        }
+
+        image.onload = on_load;
+
+        image.src = 'texture_map.png'; // python3 -m http.server
+
+        /* function xor_texture() {
+            let data = new Array(256 * 256 * 4); // 4 bytes per pixel
+            let width = 256;
+            for (let row = 0; row < width; row++) {
+                for (let col = 0; col < width; col++) {
+                    let pix = (row * width + col) * 4;
+                    data[pix] = data[pix + 1] = data[pix + 2] = row ^ col;
+                    data[pix + 3] = 255;
+                }
+            }
+            return new Uint8Array(data);
+        } */
+        
+        requestAnimationFrame(render); // Queue animation rendering
+        function render() {
+            requestAnimationFrame(render);
+
+            gl.enable(gl.DEPTH_TEST);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            set_uniform_matrix4(gl, shader_program, "modelview", proj.mul(camera.inverse()).data);
+            
+            mesh.render(gl);
+        }
+
+        setInterval(update, 1000/60);
+        function update() {
+            camera = keys.control(camera);
+        }
+    </script>
+</body></html>
